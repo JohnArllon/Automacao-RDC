@@ -7,26 +7,8 @@ import warnings
 import re
 
 # ==============================================================================
-#                         PARÂMETROS EDITÁVEIS
+# AS VARIÁVEIS DATA_INI_VENDA, LOJAS_ALVO, ETC FORAM MOVIDAS PARA DENTRO DA FUNÇÃO
 # ==============================================================================
-DATA_INI_VENDA   = '2026-02-13' 
-DATA_FIM_VENDA   = '2026-04-16' 
-
-DATA_INI_ENTREGA = '2026-04-30'
-DATA_FIM_ENTREGA = '2026-05-11'
-
-LOJAS_ALVO = "161, 318, 328, 473, 533, 567, 582, 610, 611"
-FAT_MINIMO = 3500.00
-# ==============================================================================
-
-# Cálculos de Datas para o Painel
-d_venda_ini = datetime.strptime(DATA_INI_VENDA, "%Y-%m-%d")
-d_venda_fim = datetime.strptime(DATA_FIM_VENDA, "%Y-%m-%d")
-T18_VALOR = abs((d_venda_fim - d_venda_ini).days) + 1
-
-d_ent_ini = datetime.strptime(DATA_INI_ENTREGA, "%Y-%m-%d")
-d_ent_fim = datetime.strptime(DATA_FIM_ENTREGA, "%Y-%m-%d")
-T15_VALOR = abs((d_ent_fim - d_ent_ini).days) + 1
 
 warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 load_dotenv()
@@ -45,22 +27,41 @@ def conectar():
     except Exception as e:
         print(f"❌ Erro de conexão: {e}"); return None
 
+# --- ALTERAÇÃO AQUI: FUNÇÃO PARA O STREAMLIT ---
+def rodar_automacao_v2(venda_ini, venda_fim, ent_ini, ent_fim, lojas, fat_min):
+    """
+    Função principal que integra com o app.py
+    """
+    global d_venda_ini, d_venda_fim, T18_VALOR, d_ent_ini, d_ent_fim, T15_VALOR, LOJAS_ALVO, FAT_MINIMO
+    
+    # Atribui os valores vindos da interface
+    d_venda_ini = venda_ini
+    d_venda_fim = venda_fim
+    T18_VALOR = abs((d_venda_fim - d_venda_ini).days) + 1
+
+    d_ent_ini = ent_ini
+    d_ent_fim = ent_fim
+    T15_VALOR = abs((d_ent_fim - d_ent_ini).days) + 1
+    
+    LOJAS_ALVO = lojas
+    FAT_MINIMO = fat_min
+
+    # Chama o processamento real
+    processar()
+
 def extrair_dados_rdc(caminho_arquivo):
     dados_abas = []
-    # Valor padrão caso não encontre no arquivo
-    fat_min_local = 3500.00 
+    fat_min_local = FAT_MINIMO # Usa o valor vindo da interface como padrão
     
     try:
         xls = pd.ExcelFile(caminho_arquivo)
         for aba in xls.sheet_names:
             df = pd.read_excel(xls, sheet_name=aba, header=None)
             
-            # 1. Tentar localizar o Faturamento Mínimo no cabeçalho da aba (primeiras 20 linhas)
             for index, row in df.head(20).iterrows():
                 linha_texto = " ".join([str(x) for x in row.values if pd.notna(x)])
                 if "Mínimo" in linha_texto or "Fat." in linha_texto:
                     for i, cel in enumerate(row):
-                        # Se encontrar o texto, tenta pegar o número na célula seguinte
                         if ("Mínimo" in str(cel) or "Fat." in str(cel)) and i+1 < len(row):
                             try:
                                 valor = str(row[i+1]).replace('R$', '').replace('.', '').replace(',', '.').strip()
@@ -70,7 +71,6 @@ def extrair_dados_rdc(caminho_arquivo):
 
             info = {'ref': "", 'custo': 0, 'multiplo': 1, 'fat_min': fat_min_local}
             
-            # 2. Busca Referência e Múltiplo (sua lógica original mantida)
             for index, row in df.head(15).iterrows():
                 linha_texto = " ".join([str(x) for x in row.values if pd.notna(x)])
                 match_ref = re.search(r'^(\d{4,6})\s*\|', linha_texto)
@@ -80,7 +80,6 @@ def extrair_dados_rdc(caminho_arquivo):
                         if "Multiplo:" in str(cel) and i+1 < len(row):
                             info['multiplo'] = row[i+1] if pd.notna(row[i+1]) else 1
             
-            # 3. Busca Custo
             for index, row in df.iterrows():
                 if "-" in str(row[1]) and len(str(row[1])) > 5:
                     if pd.notna(row[3]): 
@@ -150,19 +149,15 @@ def processar():
                     'Ref.': item['ref'], 
                     'Custo': item['custo'], 
                     'Qtd. / caixa': item['multiplo'],
-                    'Fat_Min_RDC': item['fat_min']  # Guardamos o valor extraído
+                    'Fat_Min_RDC': item['fat_min']
                 })
                 lista_final.append(r)
 
         if lista_final:
             df = pd.DataFrame(lista_final)
-            
-            # Garantia: Se por algum erro a coluna não existir, cria com o valor padrão
-            if 'Fat_Min_RDC' not in df.columns:
-                df['Fat_Min_RDC'] = FAT_MINIMO
+            if 'Fat_Min_RDC' not in df.columns: df['Fat_Min_RDC'] = FAT_MINIMO
 
             df = df.sort_values(by=["Ref.", "Loja"])
-            
             cols_formulas = ["Cob.", "Ped.", "Cob. máx.", "Cob. ent.", "Est. ent.", "Q1", "Q2", "R1", "R2", "T1", "T2"]
             for col in cols_formulas: df[col] = ""
 
@@ -171,27 +166,22 @@ def processar():
             df = df[ordem]
 
             caminho_saida = os.path.join(PASTA_SAIDA, f"Analise_{arquivo}")
-            # ... (código anterior igual até a criação do writer)
             try:
                 writer = pd.ExcelWriter(caminho_saida, engine='xlsxwriter')
                 df.to_excel(writer, index=False, sheet_name='Analise', startrow=0)
                 workbook  = writer.book
                 worksheet = writer.sheets['Analise']
-                
-                # Congela apenas a linha 1 e as colunas de identificação
                 worksheet.freeze_panes(1, 7) 
 
-                # --- FORMATOS ---
                 fmt_amarelo = workbook.add_format({'bg_color': '#FFFF00', 'border': 1, 'align': 'center', 'bold': True})
                 fmt_azul    = workbook.add_format({'bg_color': '#0070C0', 'font_color': 'white', 'border': 1, 'align': 'center', 'bold': True})
                 fmt_bold    = workbook.add_format({'bold': True, 'border': 1, 'align': 'right'})
                 fmt_money_y = workbook.add_format({'num_format': 'R$ #,##0.00', 'bg_color': '#FFFF00', 'border': 1})
                 fmt_money   = workbook.add_format({'num_format': 'R$ #,##0.00', 'border': 1})
                 fmt_date    = workbook.add_format({'num_format': 'dd/mm/yyyy', 'bg_color': '#FFFF00', 'border': 1, 'align': 'center'})
-                fmt_int     = workbook.add_format({'num_format': '0', 'border': 1, 'align': 'center'}) # Formato Inteiro
+                fmt_int     = workbook.add_format({'num_format': '0', 'border': 1, 'align': 'center'})
                 fmt_linha_sep = workbook.add_format({'bottom': 2, 'bottom_color': '#000000'})
 
-                # --- PAINEL DE CONTROLE LATERAL (PADRÃO ANTIGO) ---
                 col_painel = 19
                 fat_exibicao = df['Fat_Min_RDC'].iloc[0] if 'Fat_Min_RDC' in df.columns else FAT_MINIMO
                 
@@ -210,46 +200,34 @@ def processar():
                 worksheet.write(17, col_painel, "Período:", fmt_bold)
                 worksheet.write(17, col_painel+1, T18_VALOR, fmt_amarelo)
 
-                # --- PROCESSAMENTO DAS LINHAS ---
                 for i in range(len(df)):
                     row = i + 1
                     idx = i + 2
-                    
                     worksheet.write(row, 1, df.iloc[i]['Custo'], fmt_money)
                     worksheet.write(row, 2, df.iloc[i]['Qtd. / caixa'])
-                    
-                    # Cob (G)
                     worksheet.write_formula(row, 7, f'=IFERROR((F{idx}+G{idx})/E{idx}*{T18_VALOR},"-")')
-                    
-                    # Ped (H) - AZUL + INTEIRO
                     worksheet.write_formula(row, 8, f'=SUM(M{idx}:N{idx})', fmt_azul)
-                    
-                    # Cob Máx (J), Cob Ent (K), Est Ent (L) - FORMATO INTEIRO
                     worksheet.write_formula(row, 9,  f'=IFERROR((F{idx}+G{idx}+I{idx})/E{idx}*{T18_VALOR},"-")', fmt_int)
                     worksheet.write_formula(row, 10, f'=IFERROR(((F{idx}+G{idx}+I{idx})/E{idx}*{T18_VALOR})-{T15_VALOR},"-")', fmt_int)
                     worksheet.write_formula(row, 11, f'=IFERROR((F{idx}+G{idx}+I{idx})-(E{idx}*{T15_VALOR}/{T18_VALOR}),"-")', fmt_int)
-                    
-                    # Q1 e Q2 (M, N) - AMARELO + INTEIRO
                     worksheet.write(row, 12, 0, fmt_amarelo)
                     worksheet.write(row, 13, 0, fmt_amarelo)
-                    
-                    # Financeiro (R$ ...)
                     worksheet.write_formula(row, 14, f'=M{idx}*B{idx}', fmt_money)
                     worksheet.write_formula(row, 15, f'=N{idx}*B{idx}', fmt_money)
                     worksheet.write_formula(row, 16, f'=SUMIFS(O:O,D:D,D{idx})', fmt_money)
                     worksheet.write_formula(row, 17, f'=SUMIFS(P:P,D:D,D{idx})', fmt_money)
-
-                    # Divisória de Referência
                     if i < len(df) - 1 and df.iloc[i]['Ref.'] != df.iloc[i+1]['Ref.']:
                         worksheet.conditional_format(row, 0, row, 17, {'type': 'no_errors', 'format': fmt_linha_sep})
 
                 writer.close()
-
-                print(f"✅ Analise formatada com Azul (Ped) e Amarelo (Q1, Q2): {arquivo}")
+                print(f"✅ Analise finalizada: {arquivo}")
             except Exception as e:
                 print(f"❌ Erro ao salvar Excel: {e}")
 
     conn.close()
 
-if __name__ == "__main__": processar()
-print("Script executado com sucesso!")
+# --- ALTERAÇÃO AQUI: EVITA EXECUÇÃO AUTOMÁTICA ---
+if __name__ == "__main__":
+    # Caso queira rodar via terminal para teste rápido com valores padrão
+    verificar_pastas()
+    print("Para rodar a automação, use o app.py ou chame rodar_automacao_v2")
