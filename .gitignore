@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.xlsx
+Analises/
+RDCs_Originais/
+.vscode/
