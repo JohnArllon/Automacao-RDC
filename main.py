@@ -7,34 +7,54 @@ import warnings
 import re
 
 # ==============================================================================
-# AS VARIÁVEIS DATA_INI_VENDA, LOJAS_ALVO, ETC FORAM MOVIDAS PARA DENTRO DA FUNÇÃO
+#                          CONFIGURAÇÕES GLOBAIS
 # ==============================================================================
-
 warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 load_dotenv()
 
+# Definição de Caminhos
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PASTA_ENTRADA = os.path.join(BASE_DIR, "RDCs_Originais")
 PASTA_SAIDA = os.path.join(BASE_DIR, "Analises")
 
 def verificar_pastas():
+    """Cria as pastas de entrada e saída caso não existam."""
     for pasta in [PASTA_ENTRADA, PASTA_SAIDA]:
-        if not os.path.exists(pasta): os.makedirs(pasta)
+        if not os.path.exists(pasta): 
+            os.makedirs(pasta)
 
+# ==============================================================================
+#                         CONEXÃO COM BANCO DE DADOS
+# ==============================================================================
 def conectar():
+    """Estabelece conexão com SQL Server usando o Driver 17."""
     try:
-        return pyodbc.connect(f"DRIVER={{SQL Server}};SERVER={os.getenv('DB_SERVER')};DATABASE={os.getenv('DB_NAME')};UID={os.getenv('DB_USER')};PWD={os.getenv('DB_PASSWORD')}")
+        # Nome exato do driver conforme verificado no print do administrador ODBC
+        driver = "ODBC Driver 17 for SQL Server"
+        
+        conn_str = (
+            f"DRIVER={{{driver}}};"
+            f"SERVER={os.getenv('DB_SERVER')};"
+            f"DATABASE={os.getenv('DB_NAME')};"
+            f"UID={os.getenv('DB_USER')};"
+            f"PWD={os.getenv('DB_PASSWORD')};"
+            "TrustServerCertificate=yes;" # Essencial para redes corporativas
+        )
+        return pyodbc.connect(conn_str)
     except Exception as e:
-        print(f"❌ Erro de conexão: {e}"); return None
+        print(f"❌ Erro de conexão: {e}")
+        return None
 
-# --- ALTERAÇÃO AQUI: FUNÇÃO PARA O STREAMLIT ---
+# ==============================================================================
+#                     INTEGRAÇÃO COM A INTERFACE (APP.PY)
+# ==============================================================================
 def rodar_automacao_v2(venda_ini, venda_fim, ent_ini, ent_fim, lojas, fat_min):
     """
-    Função principal que integra com o app.py
+    Recebe os parâmetros da interface Streamlit e dispara o processamento.
     """
     global d_venda_ini, d_venda_fim, T18_VALOR, d_ent_ini, d_ent_fim, T15_VALOR, LOJAS_ALVO, FAT_MINIMO
     
-    # Atribui os valores vindos da interface
+    # Atribuição das datas vindas do app.py
     d_venda_ini = venda_ini
     d_venda_fim = venda_fim
     T18_VALOR = abs((d_venda_fim - d_venda_ini).days) + 1
@@ -46,18 +66,23 @@ def rodar_automacao_v2(venda_ini, venda_fim, ent_ini, ent_fim, lojas, fat_min):
     LOJAS_ALVO = lojas
     FAT_MINIMO = fat_min
 
-    # Chama o processamento real
+    # Inicia o motor principal
     processar()
 
+# ==============================================================================
+#                         EXTRAÇÃO DE DADOS DO EXCEL
+# ==============================================================================
 def extrair_dados_rdc(caminho_arquivo):
+    """Lê as abas do arquivo RDC e extrai Referência, Custo e Múltiplo."""
     dados_abas = []
-    fat_min_local = FAT_MINIMO # Usa o valor vindo da interface como padrão
+    fat_min_local = FAT_MINIMO 
     
     try:
         xls = pd.ExcelFile(caminho_arquivo)
         for aba in xls.sheet_names:
             df = pd.read_excel(xls, sheet_name=aba, header=None)
             
+            # Localização de Faturamento Mínimo na Aba
             for index, row in df.head(20).iterrows():
                 linha_texto = " ".join([str(x) for x in row.values if pd.notna(x)])
                 if "Mínimo" in linha_texto or "Fat." in linha_texto:
@@ -71,6 +96,7 @@ def extrair_dados_rdc(caminho_arquivo):
 
             info = {'ref': "", 'custo': 0, 'multiplo': 1, 'fat_min': fat_min_local}
             
+            # Localização de Referência e Múltiplo
             for index, row in df.head(15).iterrows():
                 linha_texto = " ".join([str(x) for x in row.values if pd.notna(x)])
                 match_ref = re.search(r'^(\d{4,6})\s*\|', linha_texto)
@@ -80,6 +106,7 @@ def extrair_dados_rdc(caminho_arquivo):
                         if "Multiplo:" in str(cel) and i+1 < len(row):
                             info['multiplo'] = row[i+1] if pd.notna(row[i+1]) else 1
             
+            # Localização de Custo
             for index, row in df.iterrows():
                 if "-" in str(row[1]) and len(str(row[1])) > 5:
                     if pd.notna(row[3]): 
@@ -94,7 +121,11 @@ def extrair_dados_rdc(caminho_arquivo):
         print(f"⚠️ Erro ao ler abas: {e}")
     return dados_abas
 
+# ==============================================================================
+#                          CONSULTA SQL (BANCO)
+# ==============================================================================
 def executar_sql(conn, info):
+    """Consulta Vendas, Saldos e Pendências no Banco de Dados."""
     cursor = conn.cursor()
     codigos_sql = ",".join([f"'{str(c).strip().zfill(5)}'" for c in info['codigos_busca']])
     v_ini, v_fim = d_venda_ini.strftime('%Y%m%d 00:00:00'), d_venda_fim.strftime('%Y%m%d 23:59:59')
@@ -133,15 +164,23 @@ def executar_sql(conn, info):
     cursor.close()
     return res
 
+# ==============================================================================
+#                         MOTOR DE PROCESSAMENTO
+# ==============================================================================
 def processar():
-    verificar_pastas(); conn = conectar()
+    """Coordena a extração, consulta e geração dos arquivos de saída."""
+    verificar_pastas()
+    conn = conectar()
     if not conn: return
+    
+    # Lista arquivos Excel que começam com RDC
     arquivos = [f for f in os.listdir(PASTA_ENTRADA) if f.endswith(".xlsx") and f.startswith("RDC")]
 
     for arquivo in arquivos:
         print(f"🚀 Processando: {arquivo}")
         dados_rdc = extrair_dados_rdc(os.path.join(PASTA_ENTRADA, arquivo))
         lista_final = []
+        
         for item in dados_rdc:
             resultados = executar_sql(conn, item)
             for r in resultados:
@@ -158,6 +197,8 @@ def processar():
             if 'Fat_Min_RDC' not in df.columns: df['Fat_Min_RDC'] = FAT_MINIMO
 
             df = df.sort_values(by=["Ref.", "Loja"])
+            
+            # Preparação das colunas de fórmulas
             cols_formulas = ["Cob.", "Ped.", "Cob. máx.", "Cob. ent.", "Est. ent.", "Q1", "Q2", "R1", "R2", "T1", "T2"]
             for col in cols_formulas: df[col] = ""
 
@@ -165,6 +206,7 @@ def processar():
                      "Cob.", "Ped.", "Cob. máx.", "Cob. ent.", "Est. ent.", "Q1", "Q2", "R1", "R2", "T1", "T2"]
             df = df[ordem]
 
+            # --- GERAÇÃO DO EXCEL FORMATADO ---
             caminho_saida = os.path.join(PASTA_SAIDA, f"Analise_{arquivo}")
             try:
                 writer = pd.ExcelWriter(caminho_saida, engine='xlsxwriter')
@@ -173,6 +215,7 @@ def processar():
                 worksheet = writer.sheets['Analise']
                 worksheet.freeze_panes(1, 7) 
 
+                # Definição de Formatos Excel
                 fmt_amarelo = workbook.add_format({'bg_color': '#FFFF00', 'border': 1, 'align': 'center', 'bold': True})
                 fmt_azul    = workbook.add_format({'bg_color': '#0070C0', 'font_color': 'white', 'border': 1, 'align': 'center', 'bold': True})
                 fmt_bold    = workbook.add_format({'bold': True, 'border': 1, 'align': 'right'})
@@ -182,6 +225,7 @@ def processar():
                 fmt_int     = workbook.add_format({'num_format': '0', 'border': 1, 'align': 'center'})
                 fmt_linha_sep = workbook.add_format({'bottom': 2, 'bottom_color': '#000000'})
 
+                # Painel de Controle Lateral no Excel
                 col_painel = 19
                 fat_exibicao = df['Fat_Min_RDC'].iloc[0] if 'Fat_Min_RDC' in df.columns else FAT_MINIMO
                 
@@ -200,6 +244,7 @@ def processar():
                 worksheet.write(17, col_painel, "Período:", fmt_bold)
                 worksheet.write(17, col_painel+1, T18_VALOR, fmt_amarelo)
 
+                # Escrita de Fórmulas Dinâmicas
                 for i in range(len(df)):
                     row = i + 1
                     idx = i + 2
@@ -216,18 +261,21 @@ def processar():
                     worksheet.write_formula(row, 15, f'=N{idx}*B{idx}', fmt_money)
                     worksheet.write_formula(row, 16, f'=SUMIFS(O:O,D:D,D{idx})', fmt_money)
                     worksheet.write_formula(row, 17, f'=SUMIFS(P:P,D:D,D{idx})', fmt_money)
+                    
+                    # Linha separadora visual por Referência
                     if i < len(df) - 1 and df.iloc[i]['Ref.'] != df.iloc[i+1]['Ref.']:
                         worksheet.conditional_format(row, 0, row, 17, {'type': 'no_errors', 'format': fmt_linha_sep})
 
                 writer.close()
-                print(f"✅ Analise finalizada: {arquivo}")
+                print(f"✅ Análise finalizada e salva: {arquivo}")
             except Exception as e:
                 print(f"❌ Erro ao salvar Excel: {e}")
 
     conn.close()
 
-# --- ALTERAÇÃO AQUI: EVITA EXECUÇÃO AUTOMÁTICA ---
+# ==============================================================================
+#                            INICIALIZAÇÃO
+# ==============================================================================
 if __name__ == "__main__":
-    # Caso queira rodar via terminal para teste rápido com valores padrão
-    verificar_pastas()
-    print("Para rodar a automação, use o app.py ou chame rodar_automacao_v2")
+    print("Módulo de lógica RDC carregado com sucesso.")
+    print("Para utilizar a interface visual, execute o arquivo 'app.py'.")
