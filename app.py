@@ -2,7 +2,7 @@ import streamlit as st
 import os
 import pandas as pd
 from datetime import datetime
-# Importe aqui as outras bibliotecas que já usa (pyodbc, etc)
+import time # Importado para a simulação do spinner
 
 # Configuração da Página
 st.set_page_config(page_title="Reposição RDC", layout="wide", page_icon="📊")
@@ -50,19 +50,45 @@ with col1:
         else:
             st.warning("Nenhum arquivo RDC encontrado na pasta de entrada.")
     else:
-        st.error("Pasta 'RDCs_Originais' não encontrada!")
+        # NOVIDADE AQUI: Caso a pasta não exista, o Streamlit avisa e oferece criar
+        if st.button("Criar pastas automaticamente"):
+            os.makedirs("RDCs_Originais")
+            os.makedirs("Analises")
+            st.rerun()
+        st.error("Pastas de trabalho não encontradas!")
 
 with col2:
     st.subheader("⚙️ Execução")
     if st.button("🚀 INICIAR PROCESSAMENTO", use_container_width=True):
-        # Aqui você chamaria sua função 'processar()' passando as variáveis acima
-        # Ex: processar(d_venda_ini, d_venda_fim, d_ent_ini, d_ent_fim, lojas_alvo, fat_minimo)
+        
+        # INTEGRAÇÃO FUTURA: Aqui chamaremos a função do main.py
+        # Ex: main.processar(d_venda_ini, d_venda_fim, d_ent_ini, d_ent_fim, lojas_alvo, fat_minimo)
+        
         with st.spinner("Conectando ao banco e gerando planilhas..."):
-            # Simulando progresso para os chefes
-            import time
-            time.sleep(2) 
-            st.success("Análises geradas com sucesso na pasta 'Analises'!")
+            time.sleep(2) # Simulação de carregamento
+            
+            # NOVIDADE AQUI: Captura o caminho onde o arquivo foi salvo
+            caminho_final = os.path.abspath("Analises")
+            
+            st.success("Análises geradas com sucesso!")
+            
+            # NOVIDADE AQUI: Mostra o caminho exato para o chefe não se perder
+            st.info(f"📂 **Local de salvamento:**\n\n`{caminho_final}`")
+            
             st.balloons()
+
+# NOVIDADE AQUI: Seção para listar os arquivos que já foram analisados
+st.markdown("---")
+st.subheader("📑 Resultados na Pasta de Saída")
+if os.path.exists("Analises"):
+    analisados = [f for f in os.listdir("Analises") if f.endswith(".xlsx")]
+    if analisados:
+        for f in analisados:
+            # Botão de download opcional para cada arquivo
+            with open(os.path.join("Analises", f), "rb") as file:
+                st.download_button(label=f"📥 Baixar {f}", data=file, file_name=f)
+    else:
+        st.write("Nenhum arquivo processado ainda.")
 
 st.markdown("---")
 st.caption("Desenvolvido por John Arllon - TI")
