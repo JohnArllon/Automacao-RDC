@@ -2,6 +2,9 @@ import streamlit as st
 import os
 import pandas as pd
 from datetime import datetime
+from dotenv import load_dotenv
+# Carreega as senhas do banco de dados do arquivo .env
+load_dotenv()
 import main  # Importa o motor de lógica main.py
 
 # ==============================================================================
