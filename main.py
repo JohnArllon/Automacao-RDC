@@ -48,25 +48,25 @@ def conectar():
 # ==============================================================================
 #                     INTEGRAÇÃO COM A INTERFACE (APP.PY)
 # ==============================================================================
-def rodar_automacao_v2(venda_ini, venda_fim, ent_ini, ent_fim, lojas, fat_min):
+def rodar_automacao_v2(venda_ini, venda_fim, ent_ini, ent_fim, lojas, fat_min, prazo_t15):
     """
     Recebe os parâmetros da interface Streamlit e dispara o processamento.
     """
     global d_venda_ini, d_venda_fim, T18_VALOR, d_ent_ini, d_ent_fim, T15_VALOR, LOJAS_ALVO, FAT_MINIMO
     
-    # Atribuição das datas vindas do app.py
     d_venda_ini = venda_ini
     d_venda_fim = venda_fim
     T18_VALOR = abs((d_venda_fim - d_venda_ini).days) + 1
 
     d_ent_ini = ent_ini
     d_ent_fim = ent_fim
-    T15_VALOR = abs((d_ent_fim - d_ent_ini).days) + 1
+    
+    # ALTERAÇÃO AQUI: Agora usamos o valor que veio do app.py
+    T15_VALOR = prazo_t15 
     
     LOJAS_ALVO = lojas
     FAT_MINIMO = fat_min
 
-    # Inicia o motor principal
     processar()
 
 # ==============================================================================
@@ -235,6 +235,9 @@ def processar():
                 worksheet.write(12, col_painel+1, d_ent_ini, fmt_date)
                 worksheet.write(13, col_painel, "Entrega até:", fmt_bold)
                 worksheet.write(13, col_painel+1, d_ent_fim, fmt_date)
+                hoje_geracao = datetime.now().date()
+                worksheet.write(10, col_painel, "Gerado em:", fmt_bold)
+                worksheet.write(10, col_painel+1, hoje_geracao, fmt_date)
                 worksheet.write(14, col_painel, "Prazo máx.:", fmt_bold)
                 worksheet.write(14, col_painel+1, T15_VALOR, fmt_amarelo)
                 worksheet.write(15, col_painel, "Venda de:", fmt_bold)

@@ -33,12 +33,22 @@ st.sidebar.header("📅 Parâmetros de Data")
 with st.sidebar:
     # --- SEÇÃO ENTREGA ---
     st.subheader("Entrega")
-    d_ent_ini = st.date_input("Entrega de:", datetime(2026, 4, 30))
+    d_ent_ini = st.date_input("Entrega de:", datetime(2026, 4, 28))
     d_ent_fim = st.date_input("Entrega até:", datetime(2026, 5, 11))
+
+    # Pegando a data atual
+    hoje = datetime.now().date()
     
-    # CÁLCULO DINÂMICO: Prazo Máximo (T15)
-    t15_valor = abs((d_ent_fim - d_ent_ini).days) + 1
-    st.info(f"🚚 **Prazo máx. entrega:** {t15_valor} dias")
+    # MOSTRAR DATA PARA CONFERIR (Pode apagar depois que funcionar)
+    st.write(f"Hoje é: {hoje.strftime('%d/%m/%Y')}")
+
+    # Lógica EXATA: (11/05/2026 - 24/04/2026) + 1 = 18
+    if d_ent_fim:
+        dias_restantes = (d_ent_fim - hoje).days
+        t15_valor = dias_restantes + 1
+        st.info(f"🚚 **Prazo máx. entrega: {t15_valor} dias**")
+    else:
+        t15_valor = "-"
     
     st.divider()
     
@@ -86,14 +96,15 @@ with col2:
     if st.button("🚀 INICIAR PROCESSAMENTO", use_container_width=True):
         with st.spinner("Conectando ao banco e processando as abas..."):
             try:
-                # Chamada da função no main.py com conversão de datas
+                # Chamada da função atualizada enviando o t15_valor
                 main.rodar_automacao_v2(
                     venda_ini = datetime.combine(d_venda_ini, datetime.min.time()),
                     venda_fim = datetime.combine(d_venda_fim, datetime.max.time()),
                     ent_ini   = datetime.combine(d_ent_ini, datetime.min.time()),
                     ent_fim   = datetime.combine(d_ent_fim, datetime.max.time()),
                     lojas     = lojas_alvo,
-                    fat_min   = fat_minimo
+                    fat_min   = fat_minimo,
+                    prazo_t15 = t15_valor  # <--- NOVA LINHA: enviando o cálculo para o main.py
                 )
                 st.success("Análises geradas com sucesso!")
                 st.balloons()
