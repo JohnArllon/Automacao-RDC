@@ -19,6 +19,37 @@ st.set_page_config(
 st.title("📊 Automação de Análise RDC")
 st.markdown("---")
 
+# Instruções de uso
+with st.expander("📖 Como usar o sistema — clique para ver o passo a passo"):
+    st.markdown("""
+    **Siga a ordem abaixo para não errar:**
+
+    **1️⃣ Baixar os RDCs da Intranet**
+    - Acesse a Intranet e baixe os arquivos RDC desejados
+    - Cole todos na pasta **`RDCs_Originais`**
+
+    **2️⃣ Gerar a Análise**
+    - Configure as datas e lojas na barra lateral
+    - Em **Arquivos Selecionados**, escolha os RDCs que deseja analisar
+    - Clique em **🚀 INICIAR PROCESSAMENTO**
+    - Baixe a análise gerada na seção **Resultados na Pasta de Saída**
+
+    **3️⃣ Preencher o Q1**
+    - Abra o arquivo de análise baixado
+    - Preencha a coluna **Q1** com as quantidades desejadas
+    - Salve e feche o arquivo
+
+    **4️⃣ Preencher o RDC**
+    - Em **Preencher RDC com Q1**, selecione a análise preenchida
+    - Selecione o RDC Original correspondente
+    - Clique em **📤 PREENCHER RDC**
+    - O RDC preenchido será salvo na pasta **`Prontos_Intranet`**
+
+    **5️⃣ Subir na Intranet**
+    - Pegue o arquivo da pasta **`Prontos_Intranet`**
+    - Suba de volta na Intranet
+    """)
+    
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PASTA_RDC   = os.path.join(BASE_DIR, "RDCs_Originais")
 PASTA_SAIDA = os.path.join(BASE_DIR, "Analises")
