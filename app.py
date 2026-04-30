@@ -1,6 +1,6 @@
 import streamlit as st
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 load_dotenv()
 import main
@@ -78,9 +78,21 @@ with st.sidebar:
     st.divider()
 
     st.subheader("Venda")
-    d_venda_ini = st.date_input("Venda de:", datetime(2026, 2, 13))
-    d_venda_fim = st.date_input("Venda até:", datetime(2026, 4, 16))
 
+    # 1. Calculamos as datas dinamicamente
+    hoje_dt = datetime.now().date()
+    ontem_dt = hoje_dt - timedelta(days=1)
+    
+    # 2. Para resultar em exatamente 63 dias (considerando o +1 da fórmula)
+    # Nós retrocedemos 62 dias a partir de ontem.
+    # Exemplo: Se hoje é 30/04, ontem é 29/04. 
+    # (29/04 - 62 dias) até 29/04 = 63 dias totais.
+    venda_inicio_padrao = ontem_dt - timedelta(days=62)
+
+    d_venda_ini = st.date_input("Venda de:", venda_inicio_padrao)
+    d_venda_fim = st.date_input("Venda até:", ontem_dt)
+
+    # 3. A conta que o Streamlit mostra (mantendo sua lógica original)
     t18_valor = abs((d_venda_fim - d_venda_ini).days) + 1
     st.warning(f"📈 **Período de venda:** {t18_valor} dias")
 
